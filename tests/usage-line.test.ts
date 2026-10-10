@@ -1,5 +1,5 @@
 import { test, expect, mock } from 'claude-code/testing'
-import { format, modelLabel, remaining, segments, styleOf } from '../hooks/register'
+import { RESET_RAMP, format, modelLabel, noteStyleOf, remaining, resetStep, segments, styleOf } from '../hooks/register'
 
 const T0 = Date.parse('2026-10-09T10:00:00Z')
 
@@ -73,6 +73,21 @@ test('styleOf: 프리셋마다 항목과 사용률 단계에 맞는 색을 고�
   expect(styleOf('theme', at(50)).color).toBe('claude')
 })
 
+test('resetStep: 남은 시간은 한 시간마다, 하루 이상은 하루마다 단계가 바뀐다', () => {
+  const at = (iso: string) => resetStep(iso, T0)
+  expect(at('2026-10-09T10:40:00Z')).toBe(0)
+  expect(at('2026-10-09T11:10:00Z')).toBe(1)
+  expect(at('2026-10-09T14:59:00Z')).toBe(4)
+  expect(at('2026-10-09T23:00:00Z')).toBe(5)
+  expect(at('2026-10-10T12:00:00Z')).toBe(0)
+  expect(at('2026-10-12T14:00:00Z')).toBe(2)
+  expect(at('2026-10-16T09:00:00Z')).toBe(5)
+  expect(at('2026-10-09T09:00:00Z')).toBeUndefined()
+  expect(noteStyleOf('auto', 1).color).toBe(RESET_RAMP[1])
+  expect(noteStyleOf('auto', 1).color).not.toBe(noteStyleOf('auto', 2).color)
+  expect(noteStyleOf('mono', 1)).toEqual(noteStyleOf('mono', 4))
+})
+
 test('session.measure 가 80% 를 넘으면 한 번만 토스트한다', async ($, on) => {
   mock.clock(on, { now: T0 })
   mock.store(on)
@@ -119,7 +134,9 @@ test('프롬프트 위 띠가 모델과 사용량을 색으로 그리고, 모델
   const ui = await $.ui.mount(BAND)
   expect((await part(ui, /opus|sonnet/))?.text).toBe('opus-5-5')
   expect((await part(ui, /opus|sonnet/))?.props.color).toBe('claude')
-  expect((await part(ui, /5h/))?.text).toBe(' · 5h 50% (리셋 3h 0m)')
+  expect((await part(ui, /5h/))?.text).toBe(' · 5h 50%')
+  expect((await part(ui, /리셋/))?.text).toBe(' (리셋 3h 0m)')
+  expect((await part(ui, /리셋/))?.props.color).toBe(RESET_RAMP[3])
   expect((await part(ui, /5h/))?.props.color).toBe('success')
   expect((await part(ui, /ctx/))?.text).toBe(' · ctx 10%')
   expect((await part(ui, /\$/))?.text).toBe(' · $1.00')

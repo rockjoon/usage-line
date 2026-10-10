@@ -31,13 +31,25 @@ export const remaining = (resetsAt: string | undefined, now: number): string => 
   return `${min}m`
 }
 
+// 리셋까지 남은 시간의 단계: 하루 미만이면 남은 시간(0~5, 5시간 이상은 5),
+// 하루 이상이면 남은 일수(1일 -> 0 ... 6일 이상 -> 5). 리셋이 가까울수록 작다.
+export const resetStep = (resetsAt: string | undefined, now: number): number | undefined => {
+  if (!resetsAt) return undefined
+  const ms = Date.parse(resetsAt) - now
+  if (!Number.isFinite(ms) || ms <= 0) return undefined
+  const hours = Math.floor(ms / 3_600_000)
+  const days = Math.floor(hours / 24)
+  return days >= 1 ? Math.min(days, 6) - 1 : Math.min(hours, 5)
+}
+
 // 'claude-opus-5-5' -> 'opus-5-5'. 별칭('opus')은 그대로 둔다.
 export const modelLabel = (model: string | undefined): string => (model ?? '').trim().replace(/^claude-/, '')
 
 type Role = 'model' | 'limit' | 'context' | 'cost' | 'none'
 // 0: 여유, 1: WARN 이상, 2: CRITICAL 이상
 type Level = 0 | 1 | 2
-export type Segment = { text: string; role: Role; level: Level }
+// note: 리셋까지 남은 시간처럼, 본문 뒤에 다른 색으로 붙는 덧말.
+export type Segment = { text: string; note?: string; noteStep?: number; role: Role; level: Level }
 
 const levelOf = (percent: number): Level => (percent >= CRITICAL ? 2 : percent >= WARN ? 1 : 0)
 
@@ -50,8 +62,8 @@ export const segments = (s: Snapshot, now: number): Segment[] => {
     const pct = Math.round(w.percentUsed)
     const level = levelOf(w.percentUsed)
     const left = remaining(w.resetsAt, now)
-    const text = `${label} ${pct}%${'!'.repeat(level)}${left ? ` (리셋 ${left})` : ''}`
-    parts.push({ text, role: 'limit', level })
+    const text = `${label} ${pct}%${'!'.repeat(level)}`
+    parts.push({ text, note: left ? `(리셋 ${left})` : undefined, noteStep: resetStep(w.resetsAt, now), role: 'limit', level })
   }
   if (s.rateLimits.length === 0) parts.push({ text: '한도 미확인', role: 'none', level: 0 })
   if (s.context.percent !== undefined) {
@@ -63,7 +75,7 @@ export const segments = (s: Snapshot, now: number): Segment[] => {
 
 export const format = (s: Snapshot, now: number): string =>
   segments(s, now)
-    .map(p => p.text)
+    .map(p => (p.note ? `${p.text} ${p.note}` : p.text))
     .join(' · ')
 
 // 색 프리셋. userConfig 의 colors 로 고른다.
@@ -91,6 +103,16 @@ export const styleOf = (preset: Preset, p: Segment): Style => {
     default:
       return { dimColor: true }
   }
+}
+
+// 리셋 시간의 색 단계. 리셋이 가까우면 청록, 멀수록 분홍 쪽. 사용률의 초록/노랑/빨강과 겹치지 않는다.
+export const RESET_RAMP: readonly Color[] = ['#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#a855f7', '#ec4899']
+
+// 덧말(리셋 시간)의 색: 남은 시간이 한 시간, 하루 줄 때마다 바뀐다. 단색 프리셋은 한 가지로 둔다.
+export const noteStyleOf = (preset: Preset, step: number | undefined): Style => {
+  if (preset === 'mono') return { dimColor: true }
+  if (preset === 'theme') return { color: 'claude', dimColor: true }
+  return { color: RESET_RAMP[step ?? 0] }
 }
 
 const presetOf = (value: unknown): Preset => PRESETS.find(p => p === value) ?? 'auto'
@@ -162,12 +184,13 @@ export const register: Register = (on, options) => {
 
     return (
       <Text wrap="truncate-end">
-        {parts.map((p, i) => (
+        {parts.flatMap((p, i) => [
           <Text {...styleOf(preset, p)}>
             {i > 0 ? ' · ' : ''}
             {p.text}
-          </Text>
-        ))}
+          </Text>,
+          ...(p.note ? [<Text {...noteStyleOf(preset, p.noteStep)}> {p.note}</Text>] : []),
+        ])}
       </Text>
     )
   })
