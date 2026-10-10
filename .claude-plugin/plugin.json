@@ -1,0 +1,24 @@
+{
+  "name": "usage-line",
+  "version": "0.3.0",
+  "description": "현재 모델, 5시간/7일 사용량, 컨텍스트 사용률, 비용을 프롬프트 위에 색으로 상시 표시하고 80%/95%에서 경고한다.",
+  "author": {
+    "name": "rockjoon"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "colors": {
+      "type": "string",
+      "title": "색 프리셋",
+      "description": "auto: 사용률에 따라 초록/노랑/빨강 (테마 색), vivid: 항목마다 다른 원색, mono: 흐린 단색, theme: 테마 강조색 하나",
+      "options": [
+        "auto",
+        "vivid",
+        "mono",
+        "theme"
+      ],
+      "default": "auto"
+    }
+  }
+}

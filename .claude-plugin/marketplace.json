@@ -1,0 +1,13 @@
+{
+  "name": "rockjoon-mods",
+  "description": "rockjoon 의 Claude Code mod 모음",
+  "owner": {
+    "name": "rockjoon"
+  },
+  "plugins": [
+    {
+      "name": "usage-line",
+      "source": "./"
+    }
+  ]
+}
