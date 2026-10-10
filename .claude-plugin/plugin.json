@@ -1,6 +1,6 @@
 {
   "name": "usage-line",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "현재 모델, 5시간/7일 사용량, 컨텍스트 사용률, 비용을 프롬프트 위에 색으로 상시 표시하고 80%/95%에서 경고한다.",
   "author": {
     "name": "rockjoon"
