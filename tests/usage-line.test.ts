@@ -181,3 +181,33 @@ test('설문이 띠를 쓰는 동안이나 측정 전에는 엔진의 것을 그
   expect(await survey.drawn()).toMatchObject({ children: ['engine'] })
   await survey.unmount()
 })
+
+test('모델 옆에 effort 를 괄호로 흐리게 붙이고, 서브에이전트의 요청은 무시한다', async ($, on) => {
+  mock.clock(on, { now: T0 })
+  mock.store(on)
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.step', async function* ($, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
+  })
+  const step = async (effort: 'low' | 'high' | undefined, agentId?: string) => {
+    for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort, messageCount: 1, agentId })) void _
+  }
+
+  expect(format({ context: {}, rateLimits: [], model: 'claude-opus-5-5', effort: 'high' }, T0)).toBe('opus-5-5 (high) · 한도 미확인')
+
+  await $.session.measure({ context: { window: 1, percent: 10 }, rateLimits: [], changed: ['context'] })
+  const ui = await $.ui.mount(BAND)
+  expect(await part(ui, /\(/)).toBeUndefined()
+
+  await step('high')
+  expect((await part(ui, /high/))?.text).toBe(' (high)')
+  expect((await part(ui, /high/))?.props.dimColor).toBe(true)
+
+  await step('low', 'agent-1')
+  expect((await part(ui, /high/))?.text).toBe(' (high)')
+
+  await step(undefined)
+  expect(await part(ui, /\(/)).toBeUndefined()
+  await ui.unmount()
+})

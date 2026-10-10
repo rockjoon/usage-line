@@ -14,6 +14,7 @@ const LABEL: Record<string, string> = {
 }
 
 const snapshot = atom({ plugin: 'usage-line', key: 'snapshot' } as const, null)
+const effort = atom({ plugin: 'usage-line', key: 'effort' } as const, null)
 const isEnabled = atom({ plugin: 'usage-line', key: 'isEnabled' } as const, true)
 
 // 한 윈도우(kind+resetsAt)마다 이미 알린 임계값. 리셋되면 키가 바뀌어 다시 알린다.
@@ -56,7 +57,7 @@ const levelOf = (percent: number): Level => (percent >= CRITICAL ? 2 : percent >
 export const segments = (s: Snapshot, now: number): Segment[] => {
   const parts: Segment[] = []
   const model = modelLabel(s.model)
-  if (model) parts.push({ text: model, role: 'model', level: 0 })
+  if (model) parts.push({ text: model, note: s.effort ? `(${s.effort})` : undefined, role: 'model', level: 0 })
   for (const w of s.rateLimits) {
     const label = LABEL[w.kind] ?? w.kind
     const pct = Math.round(w.percentUsed)
@@ -114,6 +115,10 @@ export const noteStyleOf = (preset: Preset, step: number | undefined): Style => 
   if (preset === 'theme') return { color: 'claude', dimColor: true }
   return { color: RESET_RAMP[step ?? 0] }
 }
+
+// 덧말의 색: 모델 옆의 effort 는 어느 프리셋에서나 흐리게, 한도 옆의 리셋 시간은 단계별 색.
+const noteStyle = (preset: Preset, p: Segment): Style =>
+  p.role === 'model' ? { dimColor: true } : noteStyleOf(preset, p.noteStep)
 
 const presetOf = (value: unknown): Preset => PRESETS.find(p => p === value) ?? 'auto'
 
@@ -175,12 +180,21 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // effort 는 요청에만 실려 온다. 메인 루프의 요청을 지나가며 읽고, 그대로 흘려보낸다.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined) {
+      const level = e.effort === undefined ? null : String(e.effort)
+      if ((await read($, effort)) !== level) await update($, effort, () => level)
+    }
+    return yield* next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const s = await read($, snapshot)
     if (e.props.hasSurvey || s === null || !(await read($, isEnabled))) return next(e)
 
     const { Text } = $.ui.resolve(e)
-    const parts = segments(s, await $.clock.now())
+    const parts = segments({ ...s, effort: (await read($, effort)) ?? undefined }, await $.clock.now())
 
     return (
       <Text wrap="truncate-end">
@@ -189,7 +203,7 @@ export const register: Register = (on, options) => {
             {i > 0 ? ' · ' : ''}
             {p.text}
           </Text>,
-          ...(p.note ? [<Text {...noteStyleOf(preset, p.noteStep)}> {p.note}</Text>] : []),
+          ...(p.note ? [<Text {...noteStyle(preset, p)}> {p.note}</Text>] : []),
         ])}
       </Text>
     )
@@ -202,6 +216,7 @@ export const register: Register = (on, options) => {
     await update($, isEnabled, () => enabled)
     await $.store.set('enabled', enabled)
     const u = await save($, await $.session.usage())
-    return { text: enabled ? `사용량 표시 켜짐: ${format(u, await $.clock.now())}` : '사용량 표시 꺼짐' }
+    const line = format({ ...u, effort: (await read($, effort)) ?? undefined }, await $.clock.now())
+    return { text: enabled ? `사용량 표시 켜짐: ${line}` : '사용량 표시 꺼짐' }
   })
 }
